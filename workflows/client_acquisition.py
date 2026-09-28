@@ -6,28 +6,40 @@ from workforce_agents.decision_agent import decision_agent
 
 
 async def run_client_acquisition(company_name: str):
+
+    # Step 1: Research
     research_result = await Runner.run(
         research_agent,
         f"Research this company: {company_name}"
     )
 
+    research_data = research_result.final_output.model_dump_json(indent=2)
+
+    # Step 2: Analysis
     analysis_result = await Runner.run(
         analysis_agent,
         f"""
-Analyze the following research:
+Analyze the following structured research:
 
-{research_result.final_output}
+{research_data}
 """
     )
 
+    analysis_data = analysis_result.final_output.model_dump_json(indent=2)
+
+    # Step 3: Decision
     decision_result = await Runner.run(
         decision_agent,
         f"""
-Research:
-{research_result.final_output}
+Review the following research and analysis.
 
-Analysis:
-{analysis_result.final_output}
+RESEARCH:
+{research_data}
+
+ANALYSIS:
+{analysis_data}
+
+Determine the next workflow action.
 """
     )
 
