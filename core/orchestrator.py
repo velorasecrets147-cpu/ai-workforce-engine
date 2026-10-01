@@ -28,8 +28,18 @@ class WorkflowOrchestrator:
             business_context=business_context,
         )
 
-    def start_run(self, workflow_run: WorkflowRun) -> WorkflowRun:
+    def start_run(
+        self,
+        workflow_run: WorkflowRun,
+    ) -> WorkflowRun:
+
+        if workflow_run.status != WorkflowStatus.PENDING:
+            raise ValueError(
+                "Workflow can only be started from PENDING status."
+            )
+
         workflow_run.status = WorkflowStatus.RUNNING
+
         return workflow_run
 
     def prepare_task(
@@ -38,14 +48,25 @@ class WorkflowOrchestrator:
         task: WorkflowTask,
     ) -> WorkflowRun:
 
+        if workflow_run.status not in {
+            WorkflowStatus.RUNNING,
+            WorkflowStatus.WAITING_FOR_APPROVAL,
+        }:
+            raise ValueError(
+                "Workflow must be RUNNING before preparing a task."
+            )
+
         workflow_run.current_task = task.task_id
 
-        requires_approval = self.permission_manager.requires_approval(
-            task.risk_level,
-            task.requires_human_approval,
+        requires_approval = (
+            self.permission_manager.requires_approval(
+                task.risk_level,
+                task.requires_human_approval,
+            )
         )
 
         if requires_approval:
+
             approval = self.approval_manager.create_request(
                 approval_id=f"{workflow_run.run_id}:{task.task_id}",
                 task_id=task.task_id,
@@ -57,6 +78,7 @@ class WorkflowOrchestrator:
             workflow_run.approval_request = approval
 
         else:
+
             workflow_run.status = WorkflowStatus.RUNNING
             workflow_run.approval_request = None
 
@@ -68,10 +90,17 @@ class WorkflowOrchestrator:
     ) -> WorkflowRun:
 
         if workflow_run.approval_request is None:
-            raise ValueError("No pending approval request exists.")
+            raise ValueError(
+                "No pending approval request exists."
+            )
 
-        if workflow_run.approval_request.status != ApprovalStatus.PENDING:
-            raise ValueError("Approval request is no longer pending.")
+        if (
+            workflow_run.approval_request.status
+            != ApprovalStatus.PENDING
+        ):
+            raise ValueError(
+                "Approval request is no longer pending."
+            )
 
         self.approval_manager.approve(
             workflow_run.approval_request
@@ -87,10 +116,17 @@ class WorkflowOrchestrator:
     ) -> WorkflowRun:
 
         if workflow_run.approval_request is None:
-            raise ValueError("No pending approval request exists.")
+            raise ValueError(
+                "No pending approval request exists."
+            )
 
-        if workflow_run.approval_request.status != ApprovalStatus.PENDING:
-            raise ValueError("Approval request is no longer pending.")
+        if (
+            workflow_run.approval_request.status
+            != ApprovalStatus.PENDING
+        ):
+            raise ValueError(
+                "Approval request is no longer pending."
+            )
 
         self.approval_manager.reject(
             workflow_run.approval_request

@@ -3,10 +3,15 @@ from pydantic import BaseModel, Field
 
 class EvaluationResult(BaseModel):
     task_completed: bool
-    output_quality: float = Field(ge=0.0, le=1.0)
+    output_quality: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
     business_outcome: str
     issues: list[str] = Field(default_factory=list)
-    improvement_suggestions: list[str] = Field(default_factory=list)
+    improvement_suggestions: list[str] = Field(
+        default_factory=list
+    )
 
 
 class WorkflowEvaluator:
@@ -29,7 +34,8 @@ class WorkflowEvaluator:
 
         if output_quality < 0.7:
             suggestions.append(
-                "Review instructions, tools, input quality, and agent output."
+                "Review instructions, tools, input quality, "
+                "and agent output."
             )
 
         if not business_outcome:

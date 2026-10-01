@@ -22,10 +22,30 @@ class ApprovalManager:
             risk_level=risk_level,
         )
 
-    def approve(self, request: ApprovalRequest) -> ApprovalRequest:
+    def approve(
+        self,
+        request: ApprovalRequest,
+    ) -> ApprovalRequest:
+
+        if request.status != ApprovalStatus.PENDING:
+            raise ValueError(
+                "Only pending approval requests can be approved."
+            )
+
         request.status = ApprovalStatus.APPROVED
+
         return request
 
-    def reject(self, request: ApprovalRequest) -> ApprovalRequest:
+    def reject(
+        self,
+        request: ApprovalRequest,
+    ) -> ApprovalRequest:
+
+        if request.status != ApprovalStatus.PENDING:
+            raise ValueError(
+                "Only pending approval requests can be rejected."
+            )
+
         request.status = ApprovalStatus.REJECTED
+
         return request

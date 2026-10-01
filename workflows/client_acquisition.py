@@ -21,6 +21,10 @@ async def run_client_acquisition(
     orchestrator = WorkflowOrchestrator()
     evaluator = WorkflowEvaluator()
 
+    # ----------------------------------------
+    # BUSINESS CONTEXT
+    # ----------------------------------------
+
     business_context = BusinessContext(
         business_name=business_name,
         business_type="B2B Service",
@@ -36,6 +40,10 @@ async def run_client_acquisition(
         ],
     )
 
+    # ----------------------------------------
+    # CREATE WORKFLOW RUN
+    # ----------------------------------------
+
     workflow_run = orchestrator.create_run(
         run_id=str(uuid.uuid4()),
         workflow_name="client_acquisition",
@@ -44,14 +52,17 @@ async def run_client_acquisition(
 
     orchestrator.start_run(workflow_run)
 
-    # -------------------------------------------------
-    # 1. RESEARCH
-    # -------------------------------------------------
+    # ----------------------------------------
+    # STEP 1 — RESEARCH
+    # ----------------------------------------
 
     research_task = WorkflowTask(
         task_id="research",
         name="Research Company",
-        description="Research and structure verified company information.",
+        description=(
+            "Research and structure verified "
+            "company information."
+        ),
         risk_level=RiskLevel.LOW,
     )
 
@@ -66,19 +77,25 @@ async def run_client_acquisition(
 Research this target company:
 
 {company_name}
+
+Return structured research according to
+your defined output schema.
 """,
     )
 
     research_data = research_result.final_output
 
-    # -------------------------------------------------
-    # 2. ANALYSIS
-    # -------------------------------------------------
+    # ----------------------------------------
+    # STEP 2 — ANALYSIS
+    # ----------------------------------------
 
     analysis_task = WorkflowTask(
         task_id="analysis",
         name="Analyze Company",
-        description="Analyze research and identify business signals.",
+        description=(
+            "Analyze research and identify "
+            "business signals and possible needs."
+        ),
         risk_level=RiskLevel.LOW,
     )
 
@@ -90,22 +107,28 @@ Research this target company:
     analysis_result = await Runner.run(
         analysis_agent,
         f"""
-Analyze this structured research:
+Analyze the following structured research:
 
 {research_data.model_dump_json(indent=2)}
+
+Identify business signals, possible needs,
+risks, missing information, and relevance.
 """,
     )
 
     analysis_data = analysis_result.final_output
 
-    # -------------------------------------------------
-    # 3. DECISION
-    # -------------------------------------------------
+    # ----------------------------------------
+    # STEP 3 — DECISION
+    # ----------------------------------------
 
     decision_task = WorkflowTask(
         task_id="decision",
         name="Make Qualification Decision",
-        description="Determine the next workflow action.",
+        description=(
+            "Determine the next workflow action "
+            "based on research and analysis."
+        ),
         risk_level=RiskLevel.MEDIUM,
     )
 
@@ -118,18 +141,23 @@ Analyze this structured research:
         decision_agent,
         f"""
 Research:
+
 {research_data.model_dump_json(indent=2)}
 
 Analysis:
+
 {analysis_data.model_dump_json(indent=2)}
+
+Determine the next workflow action using
+only the supplied evidence.
 """,
     )
 
     decision_data = decision_result.final_output
 
-    # -------------------------------------------------
-    # Store completed reasoning results
-    # -------------------------------------------------
+    # ----------------------------------------
+    # STORE WORKFLOW RESULTS
+    # ----------------------------------------
 
     workflow_run.results.update(
         {
@@ -139,14 +167,21 @@ Analysis:
         }
     )
 
-    # -------------------------------------------------
-    # 4. HUMAN APPROVAL BOUNDARY
-    # -------------------------------------------------
+    # ----------------------------------------
+    # STEP 4 — OUTREACH
+    # ----------------------------------------
+    #
+    # Outreach is HIGH RISK.
+    # Therefore human approval is required.
+    #
 
     outreach_task = WorkflowTask(
         task_id="outreach",
         name="Client Outreach",
-        description="Contact the qualified company.",
+        description=(
+            "Contact the qualified company "
+            "after human approval."
+        ),
         risk_level=RiskLevel.HIGH,
         requires_human_approval=True,
     )
@@ -156,11 +191,14 @@ Analysis:
         outreach_task,
     )
 
-    # -------------------------------------------------
-    # STOP HERE UNTIL HUMAN APPROVAL
-    # -------------------------------------------------
+    # ----------------------------------------
+    # HUMAN APPROVAL REQUIRED
+    # ----------------------------------------
 
-    if workflow_run.status.value == "WAITING_FOR_APPROVAL":
+    if (
+        workflow_run.status.value
+        == "WAITING_FOR_APPROVAL"
+    ):
         return {
             "workflow_run": workflow_run,
             "research": research_data,
@@ -169,9 +207,9 @@ Analysis:
             "evaluation": None,
         }
 
-    # -------------------------------------------------
-    # 5. EVALUATION
-    # -------------------------------------------------
+    # ----------------------------------------
+    # EVALUATION
+    # ----------------------------------------
 
     evaluation = evaluator.evaluate(
         task_completed=True,
@@ -179,7 +217,13 @@ Analysis:
         business_outcome=decision_data.action,
     )
 
-    workflow_run.results["evaluation"] = evaluation.model_dump()
+    workflow_run.results["evaluation"] = (
+        evaluation.model_dump()
+    )
+
+    # ----------------------------------------
+    # FINAL RESULT
+    # ----------------------------------------
 
     return {
         "workflow_run": workflow_run,

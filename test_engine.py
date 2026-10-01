@@ -51,10 +51,6 @@ def create_workflow():
 
 def main():
 
-    # ============================================
-    # TEST 1 — APPROVAL REQUEST
-    # ============================================
-
     print("========================================")
     print("TEST 1 — APPROVAL REQUEST")
     print("========================================")
@@ -69,14 +65,14 @@ def main():
     )
 
     assert run.status == WorkflowStatus.WAITING_FOR_APPROVAL
-    assert run.approval_request.status == ApprovalStatus.PENDING
+    assert run.current_task == "outreach"
+    assert run.approval_request is not None
+    assert (
+        run.approval_request.status
+        == ApprovalStatus.PENDING
+    )
 
     print("PASS")
-
-
-    # ============================================
-    # TEST 2 — HUMAN APPROVES
-    # ============================================
 
     print("\n========================================")
     print("TEST 2 — HUMAN APPROVES")
@@ -91,14 +87,12 @@ def main():
     )
 
     assert run.status == WorkflowStatus.RUNNING
-    assert run.approval_request.status == ApprovalStatus.APPROVED
+    assert (
+        run.approval_request.status
+        == ApprovalStatus.APPROVED
+    )
 
     print("PASS")
-
-
-    # ============================================
-    # TEST 3 — EXECUTION COMPLETES
-    # ============================================
 
     print("\n========================================")
     print("TEST 3 — EXECUTION COMPLETES")
@@ -107,7 +101,9 @@ def main():
     orchestrator.complete_current_task(
         run,
         {
-            "outreach_result": "Simulated outreach completed."
+            "outreach_result": (
+                "Simulated outreach completed."
+            )
         },
     )
 
@@ -117,13 +113,12 @@ def main():
 
     assert run.status == WorkflowStatus.COMPLETED
     assert run.current_task is None
+    assert (
+        run.results["outreach_result"]
+        == "Simulated outreach completed."
+    )
 
     print("PASS")
-
-
-    # ============================================
-    # TEST 4 — HUMAN REJECTS
-    # ============================================
 
     print("\n========================================")
     print("TEST 4 — HUMAN REJECTS")
@@ -140,14 +135,52 @@ def main():
     )
 
     assert run.status == WorkflowStatus.FAILED
-    assert run.approval_request.status == ApprovalStatus.REJECTED
+    assert (
+        run.approval_request.status
+        == ApprovalStatus.REJECTED
+    )
 
     print("PASS")
 
+    print("\n========================================")
+    print("TEST 5 — EVALUATION")
+    print("========================================")
 
-    # ============================================
-    # FINAL
-    # ============================================
+    from evaluation.evaluator import WorkflowEvaluator
+
+    evaluator = WorkflowEvaluator()
+
+    evaluation = evaluator.evaluate(
+        task_completed=True,
+        output_quality=0.9,
+        business_outcome="Outreach task completed",
+    )
+
+    print(
+        f"Task completed: "
+        f"{evaluation.task_completed}"
+    )
+    print(
+        f"Output quality: "
+        f"{evaluation.output_quality}"
+    )
+    print(
+        f"Business outcome: "
+        f"{evaluation.business_outcome}"
+    )
+    print(
+        f"Improvement suggestions: "
+        f"{evaluation.improvement_suggestions}"
+    )
+
+    assert evaluation.task_completed is True
+    assert evaluation.output_quality == 0.9
+    assert (
+        evaluation.business_outcome
+        == "Outreach task completed"
+    )
+
+    print("PASS")
 
     print("\n========================================")
     print("ALL ENGINE TESTS PASSED")
