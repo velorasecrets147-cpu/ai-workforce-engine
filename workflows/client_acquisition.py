@@ -10,8 +10,11 @@ from core.models import (
 from core.orchestrator import WorkflowOrchestrator
 from evaluation.evaluator import WorkflowEvaluator
 from workforce_agents.analysis_agent import analysis_agent
+from workforce_agents.data_agent import data_agent
 from workforce_agents.decision_agent import decision_agent
+from workforce_agents.qualification_agent import qualification_agent
 from workforce_agents.research_agent import research_agent
+from workforce_agents.verification_agent import verification_agent
 
 
 async def run_client_acquisition(
@@ -20,10 +23,6 @@ async def run_client_acquisition(
 ):
     orchestrator = WorkflowOrchestrator()
     evaluator = WorkflowEvaluator()
-
-    # ----------------------------------------
-    # BUSINESS CONTEXT
-    # ----------------------------------------
 
     business_context = BusinessContext(
         business_name=business_name,
@@ -40,10 +39,6 @@ async def run_client_acquisition(
         ],
     )
 
-    # ----------------------------------------
-    # CREATE WORKFLOW RUN
-    # ----------------------------------------
-
     workflow_run = orchestrator.create_run(
         run_id=str(uuid.uuid4()),
         workflow_name="client_acquisition",
@@ -52,9 +47,9 @@ async def run_client_acquisition(
 
     orchestrator.start_run(workflow_run)
 
-    # ----------------------------------------
+    # =====================================================
     # STEP 1 — RESEARCH
-    # ----------------------------------------
+    # =====================================================
 
     research_task = WorkflowTask(
         task_id="research",
@@ -85,16 +80,88 @@ your defined output schema.
 
     research_data = research_result.final_output
 
-    # ----------------------------------------
-    # STEP 2 — ANALYSIS
-    # ----------------------------------------
+    # =====================================================
+    # STEP 2 — DATA
+    # =====================================================
+
+    data_task = WorkflowTask(
+        task_id="data",
+        name="Structure Business Data",
+        description=(
+            "Clean, normalize, and structure "
+            "the research data."
+        ),
+        risk_level=RiskLevel.LOW,
+    )
+
+    orchestrator.prepare_task(
+        workflow_run,
+        data_task,
+    )
+
+    data_result = await Runner.run(
+        data_agent,
+        f"""
+Convert the following research into clean,
+structured business data.
+
+Research:
+
+{research_data.model_dump_json(indent=2)}
+
+Do not invent missing information.
+Identify missing and conflicting information.
+""",
+    )
+
+    data = data_result.final_output
+
+    # =====================================================
+    # STEP 3 — VERIFICATION
+    # =====================================================
+
+    verification_task = WorkflowTask(
+        task_id="verification",
+        name="Verify Business Information",
+        description=(
+            "Verify important company information "
+            "using reliable external sources."
+        ),
+        risk_level=RiskLevel.LOW,
+    )
+
+    orchestrator.prepare_task(
+        workflow_run,
+        verification_task,
+    )
+
+    verification_result = await Runner.run(
+        verification_agent,
+        f"""
+Verify the following structured business data:
+
+{data.model_dump_json(indent=2)}
+
+Use reliable external sources when verification
+is required.
+
+Clearly separate verified information,
+unverified information, conflicts, and notes.
+""",
+    )
+
+    verification = verification_result.final_output
+
+    # =====================================================
+    # STEP 4 — ANALYSIS
+    # =====================================================
 
     analysis_task = WorkflowTask(
         task_id="analysis",
         name="Analyze Company",
         description=(
-            "Analyze research and identify "
-            "business signals and possible needs."
+            "Analyze verified business information "
+            "and identify useful business signals."
         ),
         risk_level=RiskLevel.LOW,
     )
@@ -107,27 +174,88 @@ your defined output schema.
     analysis_result = await Runner.run(
         analysis_agent,
         f"""
-Analyze the following structured research:
+Analyze the following business information.
 
-{research_data.model_dump_json(indent=2)}
+STRUCTURED DATA:
 
-Identify business signals, possible needs,
-risks, missing information, and relevance.
+{data.model_dump_json(indent=2)}
+
+VERIFICATION:
+
+{verification.model_dump_json(indent=2)}
+
+Identify:
+
+- business signals
+- possible business needs
+- risks or missing information
+- relevance to the business
+
+Use only the supplied evidence.
 """,
     )
 
-    analysis_data = analysis_result.final_output
+    analysis = analysis_result.final_output
 
-    # ----------------------------------------
-    # STEP 3 — DECISION
-    # ----------------------------------------
+    # =====================================================
+    # STEP 5 — QUALIFICATION
+    # =====================================================
+
+    qualification_task = WorkflowTask(
+        task_id="qualification",
+        name="Qualify Company",
+        description=(
+            "Determine whether the company "
+            "matches the qualification criteria."
+        ),
+        risk_level=RiskLevel.MEDIUM,
+    )
+
+    orchestrator.prepare_task(
+        workflow_run,
+        qualification_task,
+    )
+
+    qualification_result = await Runner.run(
+        qualification_agent,
+        f"""
+Determine whether this company qualifies.
+
+STRUCTURED DATA:
+
+{data.model_dump_json(indent=2)}
+
+VERIFICATION:
+
+{verification.model_dump_json(indent=2)}
+
+ANALYSIS:
+
+{analysis.model_dump_json(indent=2)}
+
+Use only the supplied evidence.
+
+Allowed statuses:
+
+QUALIFIED
+NOT_QUALIFIED
+NEEDS_MORE_INFORMATION
+HUMAN_REVIEW
+""",
+    )
+
+    qualification = qualification_result.final_output
+
+    # =====================================================
+    # STEP 6 — DECISION
+    # =====================================================
 
     decision_task = WorkflowTask(
         task_id="decision",
-        name="Make Qualification Decision",
+        name="Make Workflow Decision",
         description=(
             "Determine the next workflow action "
-            "based on research and analysis."
+            "based on qualification and analysis."
         ),
         risk_level=RiskLevel.MEDIUM,
     )
@@ -140,40 +268,51 @@ risks, missing information, and relevance.
     decision_result = await Runner.run(
         decision_agent,
         f"""
-Research:
+Determine the next workflow action.
 
-{research_data.model_dump_json(indent=2)}
+QUALIFICATION:
 
-Analysis:
+{qualification.model_dump_json(indent=2)}
 
-{analysis_data.model_dump_json(indent=2)}
+ANALYSIS:
 
-Determine the next workflow action using
-only the supplied evidence.
+{analysis.model_dump_json(indent=2)}
+
+VERIFICATION:
+
+{verification.model_dump_json(indent=2)}
+
+Use only the supplied evidence.
+
+Allowed actions:
+
+QUALIFY
+REJECT
+NEED_MORE_INFORMATION
+HUMAN_REVIEW
 """,
     )
 
-    decision_data = decision_result.final_output
+    decision = decision_result.final_output
 
-    # ----------------------------------------
+    # =====================================================
     # STORE WORKFLOW RESULTS
-    # ----------------------------------------
+    # =====================================================
 
     workflow_run.results.update(
         {
             "research": research_data.model_dump(),
-            "analysis": analysis_data.model_dump(),
-            "decision": decision_data.model_dump(),
+            "data": data.model_dump(),
+            "verification": verification.model_dump(),
+            "analysis": analysis.model_dump(),
+            "qualification": qualification.model_dump(),
+            "decision": decision.model_dump(),
         }
     )
 
-    # ----------------------------------------
-    # STEP 4 — OUTREACH
-    # ----------------------------------------
-    #
-    # Outreach is HIGH RISK.
-    # Therefore human approval is required.
-    #
+    # =====================================================
+    # STEP 7 — HUMAN APPROVAL FOR OUTREACH
+    # =====================================================
 
     outreach_task = WorkflowTask(
         task_id="outreach",
@@ -191,44 +330,39 @@ only the supplied evidence.
         outreach_task,
     )
 
-    # ----------------------------------------
-    # HUMAN APPROVAL REQUIRED
-    # ----------------------------------------
-
-    if (
-        workflow_run.status.value
-        == "WAITING_FOR_APPROVAL"
-    ):
+    if workflow_run.status.value == "WAITING_FOR_APPROVAL":
         return {
             "workflow_run": workflow_run,
             "research": research_data,
-            "analysis": analysis_data,
-            "decision": decision_data,
+            "data": data,
+            "verification": verification,
+            "analysis": analysis,
+            "qualification": qualification,
+            "decision": decision,
             "evaluation": None,
         }
 
-    # ----------------------------------------
+    # =====================================================
     # EVALUATION
-    # ----------------------------------------
+    # =====================================================
 
     evaluation = evaluator.evaluate(
         task_completed=True,
         output_quality=1.0,
-        business_outcome=decision_data.action,
+        business_outcome=decision.action,
     )
 
     workflow_run.results["evaluation"] = (
         evaluation.model_dump()
     )
 
-    # ----------------------------------------
-    # FINAL RESULT
-    # ----------------------------------------
-
     return {
         "workflow_run": workflow_run,
         "research": research_data,
-        "analysis": analysis_data,
-        "decision": decision_data,
+        "data": data,
+        "verification": verification,
+        "analysis": analysis,
+        "qualification": qualification,
+        "decision": decision,
         "evaluation": evaluation,
     }
