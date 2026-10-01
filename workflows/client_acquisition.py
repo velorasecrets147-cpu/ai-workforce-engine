@@ -2,6 +2,7 @@ import uuid
 
 from agents import Runner
 
+from core.action_planner import ActionPlanner
 from core.models import (
     BusinessContext,
     RiskLevel,
@@ -23,6 +24,7 @@ async def run_client_acquisition(
 ):
     orchestrator = WorkflowOrchestrator()
     evaluator = WorkflowEvaluator()
+    action_planner = ActionPlanner()
 
     business_context = BusinessContext(
         business_name=business_name,
@@ -47,10 +49,7 @@ async def run_client_acquisition(
 
     orchestrator.start_run(workflow_run)
 
-    # =====================================================
     # STEP 1 — RESEARCH
-    # =====================================================
-
     research_task = WorkflowTask(
         task_id="research",
         name="Research Company",
@@ -80,10 +79,7 @@ your defined output schema.
 
     research_data = research_result.final_output
 
-    # =====================================================
     # STEP 2 — DATA
-    # =====================================================
-
     data_task = WorkflowTask(
         task_id="data",
         name="Structure Business Data",
@@ -116,10 +112,7 @@ Identify missing and conflicting information.
 
     data = data_result.final_output
 
-    # =====================================================
     # STEP 3 — VERIFICATION
-    # =====================================================
-
     verification_task = WorkflowTask(
         task_id="verification",
         name="Verify Business Information",
@@ -152,10 +145,7 @@ unverified information, conflicts, and notes.
 
     verification = verification_result.final_output
 
-    # =====================================================
     # STEP 4 — ANALYSIS
-    # =====================================================
-
     analysis_task = WorkflowTask(
         task_id="analysis",
         name="Analyze Company",
@@ -197,10 +187,7 @@ Use only the supplied evidence.
 
     analysis = analysis_result.final_output
 
-    # =====================================================
     # STEP 5 — QUALIFICATION
-    # =====================================================
-
     qualification_task = WorkflowTask(
         task_id="qualification",
         name="Qualify Company",
@@ -246,10 +233,7 @@ HUMAN_REVIEW
 
     qualification = qualification_result.final_output
 
-    # =====================================================
     # STEP 6 — DECISION
-    # =====================================================
-
     decision_task = WorkflowTask(
         task_id="decision",
         name="Make Workflow Decision",
@@ -281,23 +265,17 @@ ANALYSIS:
 VERIFICATION:
 
 {verification.model_dump_json(indent=2)}
-
-Use only the supplied evidence.
-
-Allowed actions:
-
-QUALIFY
-REJECT
-NEED_MORE_INFORMATION
-HUMAN_REVIEW
 """,
     )
 
     decision = decision_result.final_output
 
-    # =====================================================
-    # STORE WORKFLOW RESULTS
-    # =====================================================
+    # STEP 7 — ACTION PLANNING
+    action_plan = action_planner.create_plan(
+        workflow_run_id=workflow_run.run_id,
+        decision=decision.action,
+        decision_reason=decision.reason,
+    )
 
     workflow_run.results.update(
         {
@@ -307,28 +285,31 @@ HUMAN_REVIEW
             "analysis": analysis.model_dump(),
             "qualification": qualification.model_dump(),
             "decision": decision.model_dump(),
+            "action_plan": action_plan.model_dump(),
         }
     )
 
-    # =====================================================
-    # STEP 7 — HUMAN APPROVAL FOR OUTREACH
-    # =====================================================
+    # STEP 8 — PREPARE PLANNED ACTION
+    planned_action = action_plan.actions[0]
 
     outreach_task = WorkflowTask(
-        task_id="outreach",
-        name="Client Outreach",
-        description=(
-            "Contact the qualified company "
-            "after human approval."
+        task_id=planned_action.action_id,
+        name=planned_action.action_type.value,
+        description=planned_action.description,
+        risk_level=planned_action.risk_level,
+        requires_human_approval=(
+            planned_action.requires_human_approval
         ),
-        risk_level=RiskLevel.HIGH,
-        requires_human_approval=True,
     )
 
     orchestrator.prepare_task(
         workflow_run,
         outreach_task,
     )
+
+    # HIGH-RISK ACTION
+    # Actual tool execution is intentionally NOT done here.
+    # Tool execution belongs to Phase 4.
 
     if workflow_run.status.value == "WAITING_FOR_APPROVAL":
         return {
@@ -339,22 +320,18 @@ HUMAN_REVIEW
             "analysis": analysis,
             "qualification": qualification,
             "decision": decision,
+            "action_plan": action_plan,
             "evaluation": None,
         }
 
-    # =====================================================
-    # EVALUATION
-    # =====================================================
-
+    # LOW/MEDIUM RISK ACTION
     evaluation = evaluator.evaluate(
         task_completed=True,
         output_quality=1.0,
         business_outcome=decision.action,
     )
 
-    workflow_run.results["evaluation"] = (
-        evaluation.model_dump()
-    )
+    workflow_run.results["evaluation"] = evaluation.model_dump()
 
     return {
         "workflow_run": workflow_run,
@@ -364,5 +341,6 @@ HUMAN_REVIEW
         "analysis": analysis,
         "qualification": qualification,
         "decision": decision,
+        "action_plan": action_plan,
         "evaluation": evaluation,
     }

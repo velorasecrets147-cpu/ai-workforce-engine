@@ -1,9 +1,14 @@
+from core.action_planner import ActionPlanner
 from core.models import (
     ApprovalStatus,
     BusinessContext,
     RiskLevel,
     WorkflowStatus,
     WorkflowTask,
+)
+from core.planning import (
+    ActionStatus,
+    ActionType,
 )
 from core.orchestrator import WorkflowOrchestrator
 
@@ -179,6 +184,81 @@ def main():
         evaluation.business_outcome
         == "Outreach task completed"
     )
+
+    print("PASS")
+
+    print("\n========================================")
+    print("TEST 6 — ACTION PLANNER QUALIFY")
+    print("========================================")
+
+    planner = ActionPlanner()
+
+    action_plan = planner.create_plan(
+        workflow_run_id="run-001",
+        decision="QUALIFY",
+        decision_reason=(
+            "Company matches the qualification criteria."
+        ),
+    )
+
+    action = action_plan.actions[0]
+
+    print(f"Plan ID: {action_plan.plan_id}")
+    print(f"Action type: {action.action_type}")
+    print(f"Description: {action.description}")
+    print(f"Risk level: {action.risk_level}")
+    print(
+        f"Human approval required: "
+        f"{action.requires_human_approval}"
+    )
+    print(f"Tool: {action.tool_name}")
+    print(f"Status: {action.status}")
+
+    assert len(action_plan.actions) == 1
+    assert (
+        action.action_type
+        == ActionType.CREATE_OUTREACH
+    )
+    assert action.risk_level == RiskLevel.HIGH
+    assert action.requires_human_approval is True
+    assert action.tool_name == "email"
+    assert (
+        action.status
+        == ActionStatus.WAITING_FOR_APPROVAL
+    )
+
+    print("PASS")
+
+    print("\n========================================")
+    print("TEST 7 — ACTION PLANNER REJECT")
+    print("========================================")
+
+    reject_plan = planner.create_plan(
+        workflow_run_id="run-002",
+        decision="REJECT",
+        decision_reason=(
+            "Company does not match the criteria."
+        ),
+    )
+
+    reject_action = reject_plan.actions[0]
+
+    print(f"Action type: {reject_action.action_type}")
+    print(f"Risk level: {reject_action.risk_level}")
+    print(
+        f"Human approval required: "
+        f"{reject_action.requires_human_approval}"
+    )
+    print(f"Status: {reject_action.status}")
+
+    assert (
+        reject_action.action_type
+        == ActionType.NO_ACTION
+    )
+    assert reject_action.risk_level == RiskLevel.LOW
+    assert reject_action.requires_human_approval is False
+    assert reject_action.tool_name is None
+    assert reject_action.status == ActionStatus.READY
 
     print("PASS")
 
