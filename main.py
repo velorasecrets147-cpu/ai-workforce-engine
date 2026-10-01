@@ -17,26 +17,50 @@ async def main():
 
     result = await run_client_acquisition(company_name)
 
+    print("\n=== WORKFLOW ===")
+    print(
+        json.dumps(
+            result["workflow_run"].model_dump(),
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+
     print("\n=== RESEARCH ===")
-    print(json.dumps(
-        result["research"].model_dump(),
-        indent=2,
-        ensure_ascii=False
-    ))
+    print(
+        json.dumps(
+            result["research"].model_dump(),
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
 
     print("\n=== ANALYSIS ===")
-    print(json.dumps(
-        result["analysis"].model_dump(),
-        indent=2,
-        ensure_ascii=False
-    ))
+    print(
+        json.dumps(
+            result["analysis"].model_dump(),
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
 
     print("\n=== DECISION ===")
-    print(json.dumps(
-        result["decision"].model_dump(),
-        indent=2,
-        ensure_ascii=False
-    ))
+    print(
+        json.dumps(
+            result["decision"].model_dump(),
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+
+    print("\n=== EVALUATION ===")
+    print(
+        json.dumps(
+            result["evaluation"].model_dump(),
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":
