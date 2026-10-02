@@ -10,7 +10,13 @@ from core.planning import (
     ActionStatus,
     ActionType,
 )
-from core.orchestrator import WorkflowOrchestrator
+from core.tool_executor import ToolExecutor
+from core.tool_models import (
+    ToolDefinition,
+    ToolResult,
+    ToolStatus,
+)
+from core.tool_registry import ToolRegistry
 from evaluation.evaluator import WorkflowEvaluator
 
 
@@ -472,6 +478,369 @@ def main():
     assert (
         integration_run.approval_request.status
         == ApprovalStatus.PENDING
+    )
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 11 — TOOL REGISTRY
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 11 — TOOL REGISTRY")
+    print("========================================")
+
+    registry = ToolRegistry()
+
+    email_tool = ToolDefinition(
+        name="email",
+        description="Send or prepare business email.",
+    )
+
+    registry.register(email_tool)
+
+    registered_tool = registry.get("email")
+
+    print(f"Tool name: {registered_tool.name}")
+    print(f"Tool status: {registered_tool.status}")
+    print(f"Tool exists: {registry.exists('email')}")
+
+    assert registered_tool.name == "email"
+    assert registered_tool.status == ToolStatus.AVAILABLE
+    assert registry.exists("email") is True
+    assert len(registry.list_tools()) == 1
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 12 — TOOL EXECUTOR
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 12 — TOOL EXECUTOR")
+    print("========================================")
+
+    executor = ToolExecutor(registry)
+
+    def email_handler(parameters: dict) -> ToolResult:
+
+        recipient = parameters.get(
+            "recipient",
+            "unknown",
+        )
+
+        return ToolResult(
+            success=True,
+            tool_name="email",
+            message="Email tool executed successfully.",
+            data={
+                "recipient": recipient,
+                "mode": "simulated",
+            },
+        )
+
+    executor.register_handler(
+        "email",
+        email_handler,
+    )
+
+    tool_result = executor.execute(
+        "email",
+        {
+            "recipient": "demo@example.com",
+        },
+    )
+
+    print(f"Success: {tool_result.success}")
+    print(f"Tool: {tool_result.tool_name}")
+    print(f"Message: {tool_result.message}")
+    print(f"Data: {tool_result.data}")
+
+    assert tool_result.success is True
+    assert tool_result.tool_name == "email"
+    assert (
+        tool_result.message
+        == "Email tool executed successfully."
+    )
+    assert (
+        tool_result.data["recipient"]
+        == "demo@example.com"
+    )
+    assert tool_result.data["mode"] == "simulated"
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 13 — MISSING TOOL HANDLER
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 13 — MISSING TOOL HANDLER")
+    print("========================================")
+
+    registry_without_handler = ToolRegistry()
+
+    browser_tool = ToolDefinition(
+        name="browser",
+        description="Interact with a web browser.",
+    )
+
+    registry_without_handler.register(browser_tool)
+
+    executor_without_handler = ToolExecutor(
+        registry_without_handler
+    )
+
+    missing_handler_result = executor_without_handler.execute(
+        "browser"
+    )
+
+    print(
+        f"Success: "
+        f"{missing_handler_result.success}"
+    )
+    print(
+        f"Tool: "
+        f"{missing_handler_result.tool_name}"
+    )
+    print(
+        f"Message: "
+        f"{missing_handler_result.message}"
+    )
+
+    assert missing_handler_result.success is False
+    assert missing_handler_result.tool_name == "browser"
+    assert (
+        "No execution handler"
+        in missing_handler_result.message
+    )
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 14 — TOOL FAILURE HANDLING
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 14 — TOOL FAILURE HANDLING")
+    print("========================================")
+
+    failing_registry = ToolRegistry()
+
+    failing_tool = ToolDefinition(
+        name="failing_tool",
+        description="Tool used to test execution failures.",
+    )
+
+    failing_registry.register(failing_tool)
+
+    failing_executor = ToolExecutor(
+        failing_registry
+    )
+
+    def failing_handler(parameters: dict) -> ToolResult:
+
+        raise RuntimeError("Simulated tool failure.")
+
+    failing_executor.register_handler(
+        "failing_tool",
+        failing_handler,
+    )
+
+    failure_result = failing_executor.execute(
+        "failing_tool"
+    )
+
+    print(f"Success: {failure_result.success}")
+    print(f"Tool: {failure_result.tool_name}")
+    print(f"Message: {failure_result.message}")
+
+    assert failure_result.success is False
+    assert failure_result.tool_name == "failing_tool"
+    assert (
+        "Tool execution failed"
+        in failure_result.message
+    )
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 15 — HIGH RISK TOOL BLOCKED
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 15 — HIGH RISK TOOL BLOCKED")
+    print("========================================")
+
+    protected_registry = ToolRegistry()
+
+    protected_registry.register(
+        ToolDefinition(
+            name="email",
+            description="Send business email.",
+        )
+    )
+
+    protected_executor = ToolExecutor(
+        protected_registry
+    )
+
+    protected_executor.register_handler(
+        "email",
+        email_handler,
+    )
+
+    high_risk_plan = planner.create_plan(
+        workflow_run_id="run-protected-001",
+        decision="QUALIFY",
+        decision_reason=(
+            "Company qualified for outreach."
+        ),
+    )
+
+    protected_action = high_risk_plan.actions[0]
+
+    blocked_result = protected_executor.execute(
+        "email",
+        {
+            "recipient": "demo@example.com",
+        },
+        action=protected_action,
+        approved=False,
+    )
+
+    print(f"Success: {blocked_result.success}")
+    print(f"Tool: {blocked_result.tool_name}")
+    print(f"Message: {blocked_result.message}")
+
+    assert blocked_result.success is False
+    assert blocked_result.tool_name == "email"
+    assert (
+        "blocked by permission policy"
+        in blocked_result.message
+    )
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 16 — HIGH RISK TOOL APPROVED
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 16 — HIGH RISK TOOL APPROVED")
+    print("========================================")
+
+    approved_result = protected_executor.execute(
+        "email",
+        {
+            "recipient": "demo@example.com",
+        },
+        action=protected_action,
+        approved=True,
+    )
+
+    print(f"Success: {approved_result.success}")
+    print(f"Tool: {approved_result.tool_name}")
+    print(f"Message: {approved_result.message}")
+    print(f"Data: {approved_result.data}")
+
+    assert approved_result.success is True
+    assert approved_result.tool_name == "email"
+    assert (
+        approved_result.data["recipient"]
+        == "demo@example.com"
+    )
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 17 — TOOL DOES NOT MATCH PLANNED ACTION
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 17 — TOOL DOES NOT MATCH PLANNED ACTION")
+    print("========================================")
+
+    mismatch_result = protected_executor.execute(
+        "email",
+        {
+            "recipient": "demo@example.com",
+        },
+        action=review_action,
+        approved=True,
+    )
+
+    print(f"Success: {mismatch_result.success}")
+    print(f"Tool: {mismatch_result.tool_name}")
+    print(f"Message: {mismatch_result.message}")
+
+    assert mismatch_result.success is False
+    assert mismatch_result.tool_name == "email"
+    assert (
+        "does not match"
+        in mismatch_result.message
+    )
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 18 — REGISTERED EMAIL TOOL
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 18 — REGISTERED EMAIL TOOL")
+    print("========================================")
+
+    from tools.register_tools import create_tool_executor
+
+    application_executor = create_tool_executor()
+
+    registered_email_result = application_executor.execute(
+        "email",
+        {
+            "recipient": "client@example.com",
+            "subject": "Business Partnership",
+            "body": (
+                "Hello, we would like to discuss "
+                "a potential business partnership."
+            ),
+        },
+    )
+
+    print(
+        f"Success: "
+        f"{registered_email_result.success}"
+    )
+    print(
+        f"Tool: "
+        f"{registered_email_result.tool_name}"
+    )
+    print(
+        f"Message: "
+        f"{registered_email_result.message}"
+    )
+    print(
+        f"Data: "
+        f"{registered_email_result.data}"
+    )
+
+    assert registered_email_result.success is True
+    assert registered_email_result.tool_name == "email"
+    assert (
+        registered_email_result.message
+        == "Email prepared successfully."
+    )
+    assert (
+        registered_email_result.data["recipient"]
+        == "client@example.com"
+    )
+    assert (
+        registered_email_result.data["subject"]
+        == "Business Partnership"
+    )
+    assert (
+        registered_email_result.data["sent"]
+        is False
     )
 
     print("PASS")

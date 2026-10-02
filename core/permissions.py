@@ -1,4 +1,5 @@
 from core.models import RiskLevel
+from core.planning import PlannedAction
 
 
 class PermissionManager:
@@ -13,3 +14,17 @@ class PermissionManager:
             return True
 
         return risk_level == RiskLevel.HIGH
+
+    def can_execute_tool(
+        self,
+        action: PlannedAction,
+        approved: bool = False,
+    ) -> bool:
+
+        if action.requires_human_approval and not approved:
+            return False
+
+        if action.risk_level == RiskLevel.HIGH and not approved:
+            return False
+
+        return True
