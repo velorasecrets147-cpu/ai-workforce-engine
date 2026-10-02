@@ -11,6 +11,7 @@ from core.planning import (
     ActionType,
 )
 from core.orchestrator import WorkflowOrchestrator
+from evaluation.evaluator import WorkflowEvaluator
 
 
 def create_workflow():
@@ -56,6 +57,10 @@ def create_workflow():
 
 def main():
 
+    # =========================================================
+    # TEST 1 — APPROVAL REQUEST
+    # =========================================================
+
     print("========================================")
     print("TEST 1 — APPROVAL REQUEST")
     print("========================================")
@@ -79,6 +84,10 @@ def main():
 
     print("PASS")
 
+    # =========================================================
+    # TEST 2 — HUMAN APPROVES
+    # =========================================================
+
     print("\n========================================")
     print("TEST 2 — HUMAN APPROVES")
     print("========================================")
@@ -98,6 +107,10 @@ def main():
     )
 
     print("PASS")
+
+    # =========================================================
+    # TEST 3 — EXECUTION COMPLETES
+    # =========================================================
 
     print("\n========================================")
     print("TEST 3 — EXECUTION COMPLETES")
@@ -125,6 +138,10 @@ def main():
 
     print("PASS")
 
+    # =========================================================
+    # TEST 4 — HUMAN REJECTS
+    # =========================================================
+
     print("\n========================================")
     print("TEST 4 — HUMAN REJECTS")
     print("========================================")
@@ -147,11 +164,13 @@ def main():
 
     print("PASS")
 
+    # =========================================================
+    # TEST 5 — EVALUATION
+    # =========================================================
+
     print("\n========================================")
     print("TEST 5 — EVALUATION")
     print("========================================")
-
-    from evaluation.evaluator import WorkflowEvaluator
 
     evaluator = WorkflowEvaluator()
 
@@ -186,6 +205,10 @@ def main():
     )
 
     print("PASS")
+
+    # =========================================================
+    # TEST 6 — ACTION PLANNER QUALIFY
+    # =========================================================
 
     print("\n========================================")
     print("TEST 6 — ACTION PLANNER QUALIFY")
@@ -229,6 +252,10 @@ def main():
 
     print("PASS")
 
+    # =========================================================
+    # TEST 7 — ACTION PLANNER REJECT
+    # =========================================================
+
     print("\n========================================")
     print("TEST 7 — ACTION PLANNER REJECT")
     print("========================================")
@@ -261,6 +288,197 @@ def main():
     assert reject_action.status == ActionStatus.READY
 
     print("PASS")
+
+    # =========================================================
+    # TEST 8 — ACTION PLANNER NEED MORE INFORMATION
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 8 — ACTION PLANNER NEED MORE INFORMATION")
+    print("========================================")
+
+    information_plan = planner.create_plan(
+        workflow_run_id="run-003",
+        decision="NEED_MORE_INFORMATION",
+        decision_reason=(
+            "Important qualification information is missing."
+        ),
+    )
+
+    information_action = information_plan.actions[0]
+
+    print(
+        f"Action type: "
+        f"{information_action.action_type}"
+    )
+    print(
+        f"Risk level: "
+        f"{information_action.risk_level}"
+    )
+    print(
+        f"Human approval required: "
+        f"{information_action.requires_human_approval}"
+    )
+    print(
+        f"Status: "
+        f"{information_action.status}"
+    )
+
+    assert (
+        information_action.action_type
+        == ActionType.REQUEST_MORE_INFORMATION
+    )
+    assert information_action.risk_level == RiskLevel.MEDIUM
+    assert information_action.requires_human_approval is False
+    assert information_action.tool_name is None
+    assert information_action.status == ActionStatus.READY
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 9 — ACTION PLANNER HUMAN REVIEW
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 9 — ACTION PLANNER HUMAN REVIEW")
+    print("========================================")
+
+    review_plan = planner.create_plan(
+        workflow_run_id="run-004",
+        decision="HUMAN_REVIEW",
+        decision_reason=(
+            "Conflicting information requires human judgment."
+        ),
+    )
+
+    review_action = review_plan.actions[0]
+
+    print(
+        f"Action type: "
+        f"{review_action.action_type}"
+    )
+    print(
+        f"Risk level: "
+        f"{review_action.risk_level}"
+    )
+    print(
+        f"Human approval required: "
+        f"{review_action.requires_human_approval}"
+    )
+    print(
+        f"Status: "
+        f"{review_action.status}"
+    )
+
+    assert (
+        review_action.action_type
+        == ActionType.HUMAN_REVIEW
+    )
+    assert review_action.risk_level == RiskLevel.HIGH
+    assert review_action.requires_human_approval is True
+    assert review_action.tool_name is None
+    assert (
+        review_action.status
+        == ActionStatus.WAITING_FOR_APPROVAL
+    )
+
+    print("PASS")
+
+    # =========================================================
+    # TEST 10 — ACTION PLAN WORKFLOW INTEGRATION
+    # =========================================================
+
+    print("\n========================================")
+    print("TEST 10 — ACTION PLAN WORKFLOW INTEGRATION")
+    print("========================================")
+
+    integration_run = orchestrator.create_run(
+        run_id="run-integration",
+        workflow_name="client_acquisition",
+        business_context=BusinessContext(
+            business_name="Demo Business",
+            business_type="B2B Service",
+            process_name="Client Acquisition",
+        ),
+    )
+
+    orchestrator.start_run(integration_run)
+
+    integration_plan = planner.create_plan(
+        workflow_run_id=integration_run.run_id,
+        decision="QUALIFY",
+        decision_reason=(
+            "Company matches the qualification criteria."
+        ),
+    )
+
+    integration_action = integration_plan.actions[0]
+
+    integration_run.results["action_plan"] = (
+        integration_plan.model_dump()
+    )
+
+    integration_task = WorkflowTask(
+        task_id=integration_action.action_id,
+        name=integration_action.action_type.value,
+        description=integration_action.description,
+        risk_level=integration_action.risk_level,
+        requires_human_approval=(
+            integration_action.requires_human_approval
+        ),
+    )
+
+    orchestrator.prepare_task(
+        integration_run,
+        integration_task,
+    )
+
+    print(
+        f"Workflow status: "
+        f"{integration_run.status}"
+    )
+    print(
+        f"Current task: "
+        f"{integration_run.current_task}"
+    )
+    print(
+        f"Action type: "
+        f"{integration_action.action_type}"
+    )
+    print(
+        f"Action status: "
+        f"{integration_action.status}"
+    )
+    print(
+        f"Approval required: "
+        f"{integration_action.requires_human_approval}"
+    )
+
+    assert (
+        integration_run.status
+        == WorkflowStatus.WAITING_FOR_APPROVAL
+    )
+    assert (
+        integration_run.current_task
+        == integration_action.action_id
+    )
+    assert (
+        integration_run.results["action_plan"]["actions"][0][
+            "action_type"
+        ]
+        == "CREATE_OUTREACH"
+    )
+    assert integration_run.approval_request is not None
+    assert (
+        integration_run.approval_request.status
+        == ApprovalStatus.PENDING
+    )
+
+    print("PASS")
+
+    # =========================================================
+    # FINAL
+    # =========================================================
 
     print("\n========================================")
     print("ALL ENGINE TESTS PASSED")
